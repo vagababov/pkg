@@ -56,6 +56,10 @@ required = [
   revision = "4bbc89b6501cca7dd6b5557d78d70c8d2c6e8b97"
 
 [[constraint]]
+  name = "go.opencensus.io"
+  version = "v0.22.0"
+
+[[constraint]]
   name = "contrib.go.opencensus.io/exporter/stackdriver"
   version = "v0.12.2"
 
