@@ -1,9 +1,12 @@
 /*
 Copyright 2018 The Knative Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -72,6 +75,7 @@ var (
 		"knative.dev/serving/autoscaler/stable_request_concurrency",
 		"knative.dev/serving/autoscaler/panic_request_concurrency",
 		"knative.dev/serving/autoscaler/target_concurrency_per_pod",
+		"knative.dev/serving/autoscaler/excess_burst_capacity",
 		"knative.dev/serving/autoscaler/panic_mode",
 		"knative.dev/serving/revision/request_count",
 		"knative.dev/serving/revision/request_latencies",
