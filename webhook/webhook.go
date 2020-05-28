@@ -73,13 +73,6 @@ const (
 	Connect Operation = admissionv1beta1.Connect
 )
 
-var (
-	// GracePeriod is the duration that the webhook will wait after it's
-	// context is cancelled (and probes are failing) before shutting down
-	// the http server.
-	GracePeriod = 30 * time.Second
-)
-
 // Webhook implements the external webhook for validation of
 // resources and configuration.
 type Webhook struct {
@@ -92,9 +85,6 @@ type Webhook struct {
 
 	// stopCh is closed when we should start failing readiness probes.
 	stopCh chan struct{}
-	// grace period is how long to wait after failing readiness probes
-	// before shutting down.
-	gracePeriod time.Duration
 
 	mux          http.ServeMux
 	secretlister corelisters.SecretLister
@@ -145,7 +135,6 @@ func New(
 		Logger:       logger,
 		synced:       cancel,
 		stopCh:       make(chan struct{}),
-		gracePeriod:  GracePeriod,
 	}
 
 	webhook.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +220,7 @@ func (wh *Webhook) Run(stop <-chan struct{}) error {
 			// For this to be effective, it must be greater than the probe's
 			// periodSeconds times failureThreshold by a margin suitable to
 			// propagate the new Endpoints data across the cluster.
-			time.Sleep(wh.gracePeriod)
+			time.Sleep(network.DefaultDrainTimeout)
 
 			return server.Shutdown(context.Background())
 		})
