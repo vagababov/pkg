@@ -39,7 +39,6 @@ func TestWithBuilder(t *testing.T) {
 		Component:     "the-component",
 		LeaderElect:   true,
 		Buckets:       1,
-		ResourceLock:  "leases",
 		LeaseDuration: 15 * time.Second,
 		RenewDeadline: 10 * time.Second,
 		RetryPeriod:   2 * time.Second,

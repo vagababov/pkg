@@ -470,7 +470,7 @@ func RunLeaderElected(ctx context.Context, logger *zap.SugaredLogger, run func(c
 	logger.Infof("%v will run in leader-elected mode with id %v", leConfig.Component, id)
 
 	// rl is the resource used to hold the leader election lock.
-	rl, err := resourcelock.New(leConfig.ResourceLock,
+	rl, err := resourcelock.New(kle.KnativeResourceLock,
 		system.Namespace(), // use namespace we are running in
 		leConfig.Component, // component is used as the resource name
 		kubeclient.Get(ctx).CoreV1(),

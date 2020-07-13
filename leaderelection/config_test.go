@@ -31,7 +31,6 @@ import (
 
 func okConfig() *Config {
 	return &Config{
-		ResourceLock:      "leases",
 		Buckets:           1,
 		LeaseDuration:     15 * time.Second,
 		RenewDeadline:     10 * time.Second,
@@ -42,8 +41,7 @@ func okConfig() *Config {
 
 func okData() map[string]string {
 	return map[string]string{
-		"resourceLock": "leases",
-		"buckets":      "1",
+		"buckets": "1",
 		// values in this data come from the defaults suggested in the
 		// code:
 		// https://github.com/kubernetes/client-go/blob/kubernetes-1.16.0/tools/leaderelection/leaderelection.go
@@ -87,12 +85,6 @@ func TestNewConfigMapFromData(t *testing.T) {
 			config.Buckets = 5
 			return config
 		}(),
-	}, {
-		name: "invalid resourceLock",
-		data: kmeta.UnionMaps(okData(), map[string]string{
-			"resourceLock": "flarps",
-		}),
-		err: errors.New(`resourceLock: invalid value "flarps": valid values are "leases"`),
 	}, {
 		name: "invalid leaseDuration",
 		data: kmeta.UnionMaps(okData(), map[string]string{
@@ -158,7 +150,6 @@ func TestGetComponentConfig(t *testing.T) {
 	}{{
 		name: "component enabled",
 		config: Config{
-			ResourceLock:      "leases",
 			LeaseDuration:     15 * time.Second,
 			RenewDeadline:     10 * time.Second,
 			RetryPeriod:       2 * time.Second,
@@ -167,7 +158,6 @@ func TestGetComponentConfig(t *testing.T) {
 		expected: ComponentConfig{
 			Component:     expectedName,
 			LeaderElect:   true,
-			ResourceLock:  "leases",
 			LeaseDuration: 15 * time.Second,
 			RenewDeadline: 10 * time.Second,
 			RetryPeriod:   2 * time.Second,
@@ -175,7 +165,6 @@ func TestGetComponentConfig(t *testing.T) {
 	}, {
 		name: "component disabled",
 		config: Config{
-			ResourceLock:      "leases",
 			LeaseDuration:     15 * time.Second,
 			RenewDeadline:     10 * time.Second,
 			RetryPeriod:       2 * time.Second,
