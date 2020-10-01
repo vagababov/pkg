@@ -536,7 +536,7 @@ func TestGetMetricsConfig(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range errorTests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := createMetricsConfig(ctx, test.ops, TestLogger(t))
+			_, err := createMetricsConfig(ctx, test.ops)
 			if err == nil || err.Error() != test.expectedErr {
 				t.Errorf("Wanted err: %v, got: %v", test.expectedErr, err)
 			}
@@ -546,7 +546,7 @@ func TestGetMetricsConfig(t *testing.T) {
 	successTestsInit()
 	for _, test := range successTests {
 		t.Run(test.name, func(t *testing.T) {
-			mc, err := createMetricsConfig(ctx, test.ops, TestLogger(t))
+			mc, err := createMetricsConfig(ctx, test.ops)
 			if err != nil {
 				t.Errorf("Wanted valid config %v, got error %v", test.expectedConfig, err)
 			}
@@ -641,7 +641,7 @@ func TestGetMetricsConfig_fromEnv(t *testing.T) {
 			os.Setenv(test.varName, test.varValue)
 			defer os.Unsetenv(test.varName)
 
-			mc, err := createMetricsConfig(ctx, test.ops, TestLogger(t))
+			mc, err := createMetricsConfig(ctx, test.ops)
 			if err != nil {
 				t.Errorf("Wanted valid config %v, got error %v", test.expectedConfig, err)
 			}
@@ -656,9 +656,9 @@ func TestGetMetricsConfig_fromEnv(t *testing.T) {
 			os.Setenv(test.varName, test.varValue)
 			defer os.Unsetenv(test.varName)
 
-			mc, err := createMetricsConfig(ctx, test.ops, TestLogger(t))
+			mc, err := createMetricsConfig(ctx, test.ops)
 			if mc != nil {
-				t.Errorf("Wanted no config, got %v", mc)
+				t.Error("Wanted no config, got", mc)
 			}
 			if err == nil || !strings.Contains(err.Error(), test.expectedErrContains) {
 				t.Errorf("Wanted err to contain: %q, got: %v", test.expectedErrContains, err)
@@ -674,7 +674,7 @@ func TestIsNewExporterRequiredFromNilConfig(t *testing.T) {
 
 	for _, test := range successTests {
 		t.Run(test.name, func(t *testing.T) {
-			mc, err := createMetricsConfig(ctx, test.ops, TestLogger(t))
+			mc, err := createMetricsConfig(ctx, test.ops)
 			if err != nil {
 				t.Errorf("Wanted valid config %v, got error %v", test.expectedConfig, err)
 			}
@@ -842,7 +842,7 @@ func TestUpdateExporterFromConfigMapWithOpts(t *testing.T) {
 			}
 			updateFunc, err := UpdateExporterFromConfigMapWithOpts(ctx, opts, TestLogger(t))
 			if err != nil {
-				t.Errorf("failed to call UpdateExporterFromConfigMapWithOpts: %v", err)
+				t.Error("failed to call UpdateExporterFromConfigMapWithOpts:", err)
 			}
 			updateFunc(&corev1.ConfigMap{Data: test.ops.ConfigMap})
 			mConfig := getCurMetricsConfig()
@@ -925,14 +925,14 @@ func TestMetricsOptions(t *testing.T) {
 		t.Run(n, func(t *testing.T) {
 			jsonOpts, err := MetricsOptionsToJson(tc.opts)
 			if err != nil {
-				t.Errorf("error while converting metrics config to json: %v", err)
+				t.Error("error while converting metrics config to json:", err)
 			}
 			// Test to json.
 			{
 				want := tc.want
 				got := jsonOpts
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("unexpected (-want, +got) = %v", diff)
+					t.Error("unexpected (-want, +got) =", diff)
 					t.Log(got)
 				}
 			}
@@ -943,14 +943,14 @@ func TestMetricsOptions(t *testing.T) {
 
 				if gotErr != nil {
 					if diff := cmp.Diff(tc.wantErr, gotErr.Error()); diff != "" {
-						t.Errorf("unexpected err (-want, +got) = %v", diff)
+						t.Error("unexpected err (-want, +got) =", diff)
 					}
 				} else if tc.wantErr != "" {
-					t.Errorf("expected err %v", tc.wantErr)
+					t.Error("expected err", tc.wantErr)
 				}
 
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("unexpected (-want, +got) = %v", diff)
+					t.Error("unexpected (-want, +got) =", diff)
 					t.Log(got)
 				}
 			}
@@ -1052,7 +1052,7 @@ func TestStackdriverRecord(t *testing.T) {
 				Domain:    "knative.dev/internal/serving",
 				Component: "activator",
 			}
-			mc, err := createMetricsConfig(context.Background(), opts, TestLogger(t))
+			mc, err := createMetricsConfig(context.Background(), opts)
 			if err != nil {
 				t.Errorf("Expected valid config %+v, got error: %v\n", opts, err)
 			}
