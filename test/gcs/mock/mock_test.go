@@ -91,7 +91,7 @@ func TestSetError(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.testname, func(t *testing.T) {
-			mockClient := NewClientMocker()
+			mockClient := newClientMocker()
 			mockClient.SetError(tt.m)
 
 			for k, v := range tt.m {
@@ -102,7 +102,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.NewStorageBucket(ctx, bkt, project); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -112,7 +112,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.DeleteStorageBucket(ctx, bkt, true); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -122,7 +122,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if _, err := mockClient.ListChildrenFiles(ctx, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -132,7 +132,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if _, err := mockClient.ListDirectChildren(ctx, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -142,7 +142,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if _, err := mockClient.AttrObject(ctx, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -152,7 +152,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.CopyObject(ctx, bkt, dirPath, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -162,7 +162,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if _, err := mockClient.ReadObject(ctx, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -172,7 +172,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if _, err := mockClient.WriteObject(ctx, bkt, dirPath, []byte{}); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -182,7 +182,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.DeleteObject(ctx, bkt, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -192,7 +192,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.Download(ctx, bkt, dirPath, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -202,7 +202,7 @@ func TestSetError(t *testing.T) {
 					}
 
 					if err := mockClient.Upload(ctx, bkt, dirPath, dirPath); err == nil {
-						t.Errorf("expected error %v", v.Err)
+						t.Error("expected error", v.Err)
 					} else if err.Error() != v.Err.Error() {
 						t.Errorf("expected error %v, got error %v", v.Err, err)
 					}
@@ -277,7 +277,7 @@ func TestClearError(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.testname, func(t *testing.T) {
-			mockClient := NewClientMocker()
+			mockClient := newClientMocker()
 			mockClient.SetError(tt.m)
 			mockClient.ClearError()
 
@@ -338,7 +338,7 @@ func TestClearError(t *testing.T) {
 
 func TestNewStorageBucket(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	bktName2 := "test-bucket2"
@@ -390,15 +390,15 @@ func TestNewStorageBucket(t *testing.T) {
 			}
 
 			if p, ok := mockClient.revIndex[bucket(tt.bkt)]; !ok {
-				t.Fatalf("expected revIndex to contain key %v", bucket(tt.bkt))
+				t.Fatal("expected revIndex to contain key", bucket(tt.bkt))
 			} else if p != project(tt.projectName) {
 				t.Fatalf("expected revIndex value %v, got %v", project(tt.projectName), p)
 			}
 
 			if p, ok := mockClient.gcp[project(tt.projectName)]; !ok {
-				t.Fatalf("expected gcp to contain key %v", project(tt.projectName))
+				t.Fatal("expected gcp to contain key", project(tt.projectName))
 			} else if _, ok := p.bkt[bucket(tt.bkt)]; !ok {
-				t.Fatalf("expected gcp.bucket to contain key %v", bucket(tt.bkt))
+				t.Fatal("expected gcp.bucket to contain key", bucket(tt.bkt))
 			}
 		})
 	}
@@ -406,7 +406,7 @@ func TestNewStorageBucket(t *testing.T) {
 
 func TestDeleteStorageBucket(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 
@@ -464,7 +464,7 @@ func TestDeleteStorageBucket(t *testing.T) {
 
 func TestExists(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "object1"
@@ -522,7 +522,7 @@ func TestExists(t *testing.T) {
 
 func TestListChildrenFiles(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	dir1 := "dir"
@@ -586,7 +586,7 @@ func TestListChildrenFiles(t *testing.T) {
 
 func TestListDirectChildren(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	dir1 := "dir"
@@ -652,7 +652,7 @@ func TestListDirectChildren(t *testing.T) {
 
 func TestAttrObject(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "dir/object1"
@@ -713,7 +713,7 @@ func TestAttrObject(t *testing.T) {
 
 func TestCopyObject(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	bktName2 := "test-bucket2"
 	project1 := "test-project1"
@@ -805,7 +805,7 @@ func TestCopyObject(t *testing.T) {
 
 func TestReadObject(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "object1"
@@ -862,7 +862,7 @@ func TestReadObject(t *testing.T) {
 
 func TestWriteObject(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	badBkt := "non-existent-bucket"
@@ -914,7 +914,7 @@ func TestWriteObject(t *testing.T) {
 			}
 
 			if content, err := mockClient.ReadObject(ctx, tt.bkt, tt.objpath); err != nil {
-				t.Fatalf("read object returned error %v", err)
+				t.Fatal("read object returned error", err)
 			} else if !bytes.Equal(content, tt.content) {
 				t.Fatalf("expected content %v, got content %v", tt.content, content)
 			}
@@ -924,7 +924,7 @@ func TestWriteObject(t *testing.T) {
 
 func TestDeleteObject(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "dir/object1"
@@ -974,7 +974,7 @@ func TestDeleteObject(t *testing.T) {
 
 func TestDownload(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "dir/object1"
@@ -1036,7 +1036,7 @@ func TestDownload(t *testing.T) {
 
 func TestUpload(t *testing.T) {
 	ctx := context.Background()
-	mockClient := NewClientMocker()
+	mockClient := newClientMocker()
 	bktName1 := "test-bucket1"
 	project1 := "test-project1"
 	object1 := "dir/object1"

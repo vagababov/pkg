@@ -722,7 +722,7 @@ func TestEnqueue(t *testing.T) {
 			gotQueue := drainWorkQueue(impl.WorkQueue())
 
 			if diff := cmp.Diff(test.wantQueue, gotQueue); diff != "" {
-				t.Errorf("unexpected queue (-want +got): %s", diff)
+				t.Error("unexpected queue (-want +got):", diff)
 			}
 		})
 	}
@@ -736,7 +736,7 @@ func TestEnqueue(t *testing.T) {
 			gotQueue := drainWorkQueue(impl.WorkQueue())
 
 			if diff := cmp.Diff(test.wantQueue, gotQueue); diff != "" {
-				t.Errorf("unexpected queue (-want +got): %s", diff)
+				t.Error("unexpected queue (-want +got):", diff)
 			}
 		})
 	}
@@ -754,10 +754,10 @@ const (
 	queueCheckTimeout = shortDelay + 500*time.Millisecond
 )
 
-func pollQ(q workqueue.RateLimitingInterface, sig chan struct{}) func() (bool, error) {
+func pollQ(q workqueue.RateLimitingInterface, sig chan int) func() (bool, error) {
 	return func() (bool, error) {
-		if q.Len() > 0 {
-			sig <- struct{}{}
+		if ql := q.Len(); ql > 0 {
+			sig <- ql
 			return true, nil
 		}
 		return false, nil
@@ -765,7 +765,6 @@ func pollQ(q workqueue.RateLimitingInterface, sig chan struct{}) func() (bool, e
 }
 
 func TestEnqueueAfter(t *testing.T) {
-
 	impl := NewImplWithStats(&nopReconciler{}, TestLogger(t), "Testing", &FakeStatsReporter{})
 	t.Cleanup(func() {
 		impl.WorkQueue().ShutDown()
@@ -795,7 +794,7 @@ func TestEnqueueAfter(t *testing.T) {
 	}, shortDelay)
 
 	// Keep checking the queue length until 'to/fall' gets enqueued, send to channel to indicate success.
-	queuePopulated := make(chan struct{})
+	queuePopulated := make(chan int)
 	ctx, cancel := context.WithTimeout(context.Background(), queueCheckTimeout)
 
 	t.Cleanup(func() {
@@ -807,11 +806,11 @@ func TestEnqueueAfter(t *testing.T) {
 		pollQ(impl.WorkQueue(), queuePopulated), ctx.Done())
 
 	select {
-	case <-queuePopulated:
+	case qlen := <-queuePopulated:
 		if enqueueDelay := time.Since(enqueueTime); enqueueDelay < shortDelay {
 			t.Errorf("Item enqueued within %v, expected at least a %v delay", enqueueDelay, shortDelay)
 		}
-		if got, want := impl.WorkQueue().Len(), 1; got != want {
+		if got, want := qlen, 1; got != want {
 			t.Errorf("|Queue| = %d, want: %d", got, want)
 		}
 
@@ -842,7 +841,7 @@ func TestEnqueueKeyAfter(t *testing.T) {
 	impl.EnqueueKeyAfter(types.NamespacedName{Namespace: "to", Name: "fall"}, shortDelay)
 
 	// Keep checking the queue length until 'to/fall' gets enqueued, send to channel to indicate success.
-	queuePopulated := make(chan struct{})
+	queuePopulated := make(chan int)
 
 	ctx, cancel := context.WithTimeout(context.Background(), queueCheckTimeout)
 
@@ -855,11 +854,11 @@ func TestEnqueueKeyAfter(t *testing.T) {
 		pollQ(impl.WorkQueue(), queuePopulated), ctx.Done())
 
 	select {
-	case <-queuePopulated:
+	case qlen := <-queuePopulated:
 		if enqueueDelay := time.Since(enqueueTime); enqueueDelay < shortDelay {
 			t.Errorf("Item enqueued within %v, expected at least a %v delay", enqueueDelay, shortDelay)
 		}
-		if got, want := impl.WorkQueue().Len(), 1; got != want {
+		if got, want := qlen, 1; got != want {
 			t.Errorf("|Queue| = %d, want: %d", got, want)
 		}
 
@@ -1381,7 +1380,7 @@ func TestStartInformersSuccess(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
+			t.Error("Unexpected error:", err)
 		}
 	case <-time.After(time.Second):
 		t.Error("Timed out waiting for informers to sync.")
@@ -1413,7 +1412,7 @@ func TestStartInformersEventualSuccess(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Errorf("Unexpected error: %v", err)
+			t.Error("Unexpected error:", err)
 		}
 	case <-time.After(time.Second):
 		t.Error("Timed out waiting for informers to sync.")
@@ -1466,7 +1465,7 @@ func TestRunInformersSuccess(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
+			t.Fatal("Unexpected error:", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for informers to sync.")
@@ -1500,7 +1499,7 @@ func TestRunInformersEventualSuccess(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
+			t.Fatal("Unexpected error:", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for informers to sync.")
@@ -1554,7 +1553,7 @@ func TestRunInformersFinished(t *testing.T) {
 
 	waitInformers, err := RunInformers(ctx.Done(), fi)
 	if err != nil {
-		t.Fatalf("Failed to start informers: %v", err)
+		t.Fatal("Failed to start informers:", err)
 	}
 
 	cancel()

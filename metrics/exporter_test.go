@@ -214,7 +214,14 @@ func TestInterlevedExporters(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	expectNoPromSrv(t)
+
+	// Expect no prometheus server
+	time.Sleep(200 * time.Millisecond)
+	srv := getCurPromSrv()
+	if srv != nil {
+		t.Error("expected no server for stackdriver exporter")
+	}
+
 	// Then switch to prometheus exporter
 	_, _, err = newMetricsExporter(&metricsConfig{
 		domain:             servingDomain,
@@ -256,7 +263,7 @@ func TestFlushExporter(t *testing.T) {
 	}
 	e, f, err := newMetricsExporter(c, TestLogger(t))
 	if err != nil {
-		t.Errorf("Expected no error. got %v", err)
+		t.Error("Expected no error. got", err)
 	} else {
 		setCurMetricsExporter(e)
 		if want, got := false, FlushExporter(); got != want {
@@ -282,7 +289,7 @@ func TestFlushExporter(t *testing.T) {
 
 	e, f, err = newMetricsExporter(c, TestLogger(t))
 	if err != nil {
-		t.Errorf("Expected no error. got %v", err)
+		t.Error("Expected no error. got", err)
 	} else {
 		setCurMetricsExporter(e)
 		if want, got := true, FlushExporter(); got != want {

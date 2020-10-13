@@ -18,7 +18,6 @@ package metrics
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sd "contrib.go.opencensus.io/exporter/stackdriver"
 	ocmetrics "github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1"
@@ -37,14 +37,15 @@ import (
 	"go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
+	"k8s.io/apimachinery/pkg/util/clock"
 
 	emptypb "github.com/golang/protobuf/ptypes/empty"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/option"
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
-	monitoredrespb "google.golang.org/genproto/googleapis/api/monitoredres"
 	stackdriverpb "google.golang.org/genproto/googleapis/monitoring/v3"
 	"google.golang.org/grpc"
+	proto "google.golang.org/protobuf/proto"
 
 	logtesting "knative.dev/pkg/logging/testing"
 	"knative.dev/pkg/metrics/metricskey"
@@ -73,23 +74,23 @@ func TestRegisterResourceView(t *testing.T) {
 
 	viewToFind := defaultMeter.m.Find("testView")
 	if viewToFind == nil || viewToFind.Name != "testView" {
-		t.Errorf("Registered view should be found in default meter, instead got %v", viewToFind)
+		t.Error("Registered view should be found in default meter, instead got", viewToFind)
 	}
 
 	viewToFind = meter.Find("testView")
 	if viewToFind == nil || viewToFind.Name != "testView" {
-		t.Errorf("Registered view should be found in new meter, instead got %v", viewToFind)
+		t.Error("Registered view should be found in new meter, instead got", viewToFind)
 	}
 }
 
 func TestOptionForResource(t *testing.T) {
 	option, err1 := optionForResource(&r)
 	if err1 != nil {
-		t.Errorf("Should succeed getting option, instead got error %v", err1)
+		t.Error("Should succeed getting option, instead got error", err1)
 	}
 	optionAgain, err2 := optionForResource(&r)
 	if err2 != nil {
-		t.Errorf("Should succeed getting option, instead got error %v", err2)
+		t.Error("Should succeed getting option, instead got error", err2)
 	}
 
 	if fmt.Sprintf("%v", optionAgain) != fmt.Sprintf("%v", option) {
@@ -119,14 +120,14 @@ func TestSetFactory(t *testing.T) {
 	// Create the new meter and apply the factory
 	_, err := optionForResource(&resource123)
 	if err != nil {
-		t.Errorf("Should succeed getting option, instead got error %v", err)
+		t.Error("Should succeed getting option, instead got error", err)
 	}
 
 	// Now get the exporter and verify the id
 	me := meterExporterForResource(&resource123)
 	e := me.e.(*testExporter)
 	if e.id != "123" {
-		t.Errorf("Expect id to be 123, instead got %v", e.id)
+		t.Error("Expect id to be 123, instead got", e.id)
 	}
 
 	resource456 := r
@@ -134,14 +135,78 @@ func TestSetFactory(t *testing.T) {
 	// Create the new meter and apply the factory
 	_, err = optionForResource(&resource456)
 	if err != nil {
-		t.Errorf("Should succeed getting option, instead got error %v", err)
+		t.Error("Should succeed getting option, instead got error", err)
 	}
 
 	me = meterExporterForResource(&resource456)
 	e = me.e.(*testExporter)
 	if e.id != "456" {
-		t.Errorf("Expect id to be 456, instead got %v", e.id)
+		t.Error("Expect id to be 456, instead got", e.id)
 	}
+}
+
+func TestAllMetersExpiration(t *testing.T) {
+	allMeters.clock = clock.Clock(clock.NewFakeClock(time.Now()))
+	var fakeClock *clock.FakeClock = allMeters.clock.(*clock.FakeClock)
+	ClearMetersForTest() // t+0m
+
+	// Add resource123
+	resource123 := r
+	resource123.Labels["id"] = "123"
+	_, err := optionForResource(&resource123)
+	if err != nil {
+		t.Error("Should succeed getting option, instead got error ", err)
+	}
+	// (123=0m, 456=Inf)
+
+	// Bump time to make resource123's expiry offset from resource456
+	fakeClock.Step(90 * time.Second) // t+1.5m
+	// (123=0m, 456=Inf)
+
+	// Add 456
+	resource456 := r
+	resource456.Labels["id"] = "456"
+	_, err = optionForResource(&resource456)
+	if err != nil {
+		t.Error("Should succeed getting option, instead got error ", err)
+	}
+	allMeters.lock.Lock()
+	if len(allMeters.meters) != 3 {
+		t.Errorf("len(allMeters)=%d, want: 3", len(allMeters.meters))
+	}
+	allMeters.lock.Unlock()
+	// (123=1.5m, 456=0m)
+
+	// Warm up the older entry
+	fakeClock.Step(90 * time.Second) //t+3m
+	// (123=4.5m, 456=3m)
+
+	// Refresh the first entry
+	_, err = optionForResource(&resource123)
+	if err != nil {
+		t.Error("Should succeed getting option, instead got error ", err)
+	}
+	// (123=0, 456=1.5m)
+
+	// Expire the second entry
+	fakeClock.Step(9 * time.Minute) // t+12m
+	time.Sleep(1 * time.Second)     // Wait a second on the wallclock, so that the cleanup thread has time to finish a loop
+	allMeters.lock.Lock()
+	if len(allMeters.meters) != 2 {
+		t.Errorf("len(allMeters)=%d, want: 2", len(allMeters.meters))
+	}
+	allMeters.lock.Unlock()
+	// (123=9m, 456=10.5m)
+	// non-expiring defaultMeter was just tested
+
+	// Add resource789
+	resource789 := r
+	resource789.Labels["id"] = "789"
+	_, err = optionForResource(&resource789)
+	if err != nil {
+		t.Error("Should succeed getting option, instead got error ", err)
+	}
+	// (123=9m, 456=evicted, 789=0m)
 }
 
 func TestResourceAsString(t *testing.T) {
@@ -161,7 +226,7 @@ func TestResourceAsString(t *testing.T) {
 	s1 := resourceToKey(r1)
 	s3 := resourceToKey(r3)
 	if s1 == s3 {
-		t.Errorf("Expect different resources, but got the same %s", s1)
+		t.Error("Expect different resources, but got the same", s1)
 	}
 }
 
@@ -196,6 +261,7 @@ func initSdFake(sdFake *stackDriverFake) error {
 	if err != nil {
 		return err
 	}
+	defer tmp.Close()
 	credentialsContent := []byte(`{"type": "service_account"}`)
 	if _, err := tmp.Write(credentialsContent); err != nil {
 		return err
@@ -225,9 +291,10 @@ func sortMetrics() cmp.Option {
 
 // Begin table tests for exporters
 func TestMetricsExport(t *testing.T) {
-	t.Skip("Unskip after #1672 is done")
+	TestOverrideBundleCount = 1
+	t.Cleanup(func() { TestOverrideBundleCount = 0 })
 	ocFake := openCensusFake{address: "localhost:12345"}
-	sdFake := stackDriverFake{address: "localhost:12346"}
+	sdFake := stackDriverFake{}
 	prometheusPort := 19090
 	configForBackend := func(backend metricsBackend) ExporterOptions {
 		return ExporterOptions{
@@ -295,7 +362,7 @@ func TestMetricsExport(t *testing.T) {
 	}{{
 		name: "Prometheus",
 		init: func() error {
-			return UpdateExporter(configForBackend(prometheus), logtesting.TestLogger(t))
+			return UpdateExporter(context.Background(), configForBackend(prometheus), logtesting.TestLogger(t))
 		},
 		validate: func(t *testing.T) {
 			metricstest.EnsureRecorded()
@@ -329,8 +396,8 @@ testComponent_testing_value{project="p1",revision="r2"} 1
 			if err := ocFake.start(len(resources) + 1); err != nil {
 				return err
 			}
-			t.Logf("Created exporter at %s", ocFake.address)
-			return UpdateExporter(configForBackend(openCensus), logtesting.TestLogger(t))
+			t.Log("Created exporter at", ocFake.address)
+			return UpdateExporter(context.Background(), configForBackend(openCensus), logtesting.TestLogger(t))
 		},
 		validate: func(t *testing.T) {
 			// We unregister the views because this is one of two ways to flush
@@ -341,19 +408,32 @@ testComponent_testing_value{project="p1",revision="r2"} 1
 			UnregisterResourceView(gaugeView, resourceCounter)
 
 			records := []metricExtract{}
-			for record := range ocFake.published {
-				for _, m := range record.Metrics {
-					if len(m.Timeseries) > 0 {
-						labels := map[string]string{}
-						if record.Resource != nil {
-							labels = record.Resource.Labels
-						}
-						records = append(records, metricExtract{
-							Name:   m.MetricDescriptor.Name,
-							Labels: labels,
-							Value:  m.Timeseries[0].Points[0].GetInt64Value(),
-						})
+		loop:
+			for {
+				select {
+				case record := <-ocFake.published:
+					if record == nil {
+						continue loop
 					}
+					for _, m := range record.Metrics {
+						if len(m.Timeseries) > 0 {
+							labels := map[string]string{}
+							if record.Resource != nil {
+								labels = record.Resource.Labels
+							}
+							records = append(records, metricExtract{
+								Name:   m.MetricDescriptor.Name,
+								Labels: labels,
+								Value:  m.Timeseries[0].Points[0].GetInt64Value(),
+							})
+						}
+					}
+					if len(records) >= len(expected) {
+						break loop
+					}
+				case <-time.After(4 * time.Second):
+					t.Error("Timeout reading input")
+					break loop
 				}
 			}
 
@@ -367,7 +447,7 @@ testComponent_testing_value{project="p1",revision="r2"} 1
 			if err := initSdFake(&sdFake); err != nil {
 				return err
 			}
-			return UpdateExporter(configForBackend(stackdriver), logtesting.TestLogger(t))
+			return UpdateExporter(context.Background(), configForBackend(stackdriver), logtesting.TestLogger(t))
 		},
 		validate: func(t *testing.T) {
 			records := []metricExtract{}
@@ -425,7 +505,8 @@ testComponent_testing_value{project="p1",revision="r2"} 1
 }
 
 func TestStackDriverExports(t *testing.T) {
-	sdFake := stackDriverFake{address: "localhost:12346", t: t}
+	TestOverrideBundleCount = 1
+	t.Cleanup(func() { TestOverrideBundleCount = 0 })
 	eo := ExporterOptions{
 		Domain:    servingDomain,
 		Component: "autoscaler",
@@ -504,6 +585,8 @@ func TestStackDriverExports(t *testing.T) {
 	for _, tc := range harness {
 		t.Run(tc.name, func(t *testing.T) {
 			eo.ConfigMap[allowStackdriverCustomMetricsKey] = tc.allowCustomMetrics
+			// Change the cluster name to reinitialize the exporter and pick up a new port.
+			eo.ConfigMap[stackdriverClusterNameKey] = tc.name
 			actualPodCountM := stats.Int64(
 				"actual_pods",
 				"Number of pods that are allocated currently",
@@ -533,11 +616,12 @@ func TestStackDriverExports(t *testing.T) {
 				Aggregation: view.LastValue(),
 			}
 
+			sdFake := stackDriverFake{t: t}
 			if err := initSdFake(&sdFake); err != nil {
-				t.Errorf("Init stackdriver failed %s", err)
+				t.Error("Init stackdriver failed", err)
 			}
-			if err := UpdateExporter(eo, logtesting.TestLogger(t)); err != nil {
-				t.Errorf("UpdateExporter failed %s", err)
+			if err := UpdateExporter(context.Background(), eo, logtesting.TestLogger(t)); err != nil {
+				t.Error("UpdateExporter failed", err)
 			}
 
 			if err := RegisterResourceView(desiredPodsCountView, actualPodsCountView, customView); err != nil {
@@ -552,7 +636,7 @@ func TestStackDriverExports(t *testing.T) {
 				tag.Upsert(ConfigTagKey, "config"),
 				tag.Upsert(RevisionTagKey, "revision"))
 			if err != nil {
-				t.Fatalf("Unable to create tags %s", err)
+				t.Fatal("Unable to create tags", err)
 			}
 			Record(ctx, actualPodCountM.M(int64(1)))
 
@@ -566,25 +650,38 @@ func TestStackDriverExports(t *testing.T) {
 				notReadyPodCountM.M(int64(3)))
 
 			records := []metricExtract{}
-			for record := range sdFake.published {
-				for _, ts := range record.TimeSeries {
-					records = append(records, metricExtract{
-						Name:   ts.Metric.Type,
-						Labels: ts.Resource.Labels,
-						Value:  ts.Points[0].Value.GetInt64Value(),
-					})
-					if strings.HasPrefix(ts.Metric.Type, "knative.dev/") {
-						if diff := cmp.Diff(ts.Resource.Type, metricskey.ResourceTypeKnativeRevision); diff != "" {
-							t.Errorf("Incorrect resource type for %q: (-want +got): %s", ts.Metric.Type, diff)
+		loop:
+			for {
+				select {
+				case record := <-sdFake.published:
+					for _, ts := range record.TimeSeries {
+						extracted := metricExtract{
+							Name:   ts.Metric.Type,
+							Labels: ts.Resource.Labels,
+							Value:  ts.Points[0].Value.GetInt64Value(),
+						}
+						// Override 'cluster-name' label to reset to a fixed value
+						if extracted.Labels["cluster_name"] != "" {
+							extracted.Labels["cluster_name"] = "test-cluster"
+						}
+						records = append(records, extracted)
+						if strings.HasPrefix(ts.Metric.Type, "knative.dev/") {
+							if diff := cmp.Diff(ts.Resource.Type, metricskey.ResourceTypeKnativeRevision); diff != "" {
+								t.Errorf("Incorrect resource type for %q: (-want +got):\n%s", ts.Metric.Type, diff)
+							}
 						}
 					}
-				}
-				if len(records) >= 2 {
-					// There's no way to synchronize on the internal timer used
-					// by metricsexport.IntervalReader, so shut down the
-					// exporter after the first report cycle.
-					FlushExporter()
-					sdFake.srv.GracefulStop()
+					if len(records) >= len(tc.expected) {
+						// There's no way to synchronize on the internal timer used
+						// by metricsexport.IntervalReader, so shut down the
+						// exporter after the first report cycle.
+						FlushExporter()
+						sdFake.srv.GracefulStop()
+						break loop
+					}
+				case <-time.After(4 * time.Second):
+					t.Error("Timeout reading records from Stackdriver")
+					break loop
 				}
 			}
 			if diff := cmp.Diff(tc.expected, records, sortMetrics()); diff != "" {
@@ -595,11 +692,12 @@ func TestStackDriverExports(t *testing.T) {
 }
 
 type openCensusFake struct {
+	ocmetrics.UnimplementedMetricsServiceServer
 	address   string
 	srv       *grpc.Server
 	exports   sync.WaitGroup
 	wg        sync.WaitGroup
-	published chan ocmetrics.ExportMetricsServiceRequest
+	published chan *ocmetrics.ExportMetricsServiceRequest
 }
 
 func (oc *openCensusFake) start(expectedStreams int) error {
@@ -607,7 +705,7 @@ func (oc *openCensusFake) start(expectedStreams int) error {
 	if err != nil {
 		return err
 	}
-	oc.published = make(chan ocmetrics.ExportMetricsServiceRequest, 100)
+	oc.published = make(chan *ocmetrics.ExportMetricsServiceRequest, 100)
 	oc.srv = grpc.NewServer()
 	ocmetrics.RegisterMetricsServiceServer(oc.srv, oc)
 	// Run the server in the background.
@@ -649,7 +747,7 @@ func (oc *openCensusFake) Export(stream ocmetrics.MetricsService_ExportServer) e
 			if in.Resource == nil {
 				in.Resource = streamResource
 			}
-			oc.published <- *in
+			oc.published <- proto.Clone(in).(*ocmetrics.ExportMetricsServiceRequest)
 			if !metricSeen {
 				oc.exports.Done()
 				metricSeen = true
@@ -659,6 +757,7 @@ func (oc *openCensusFake) Export(stream ocmetrics.MetricsService_ExportServer) e
 }
 
 type stackDriverFake struct {
+	stackdriverpb.UnimplementedMetricServiceServer
 	address   string
 	srv       *grpc.Server
 	t         *testing.T
@@ -667,10 +766,11 @@ type stackDriverFake struct {
 
 func (sd *stackDriverFake) start() error {
 	sd.published = make(chan *stackdriverpb.CreateTimeSeriesRequest, 100)
-	ln, err := net.Listen("tcp", sd.address)
+	ln, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return err
 	}
+	sd.address = ln.Addr().String()
 	sd.srv = grpc.NewServer()
 	stackdriverpb.RegisterMetricServiceServer(sd.srv, sd)
 	// Run the server in the background.
@@ -683,34 +783,9 @@ func (sd *stackDriverFake) start() error {
 
 func (sd *stackDriverFake) CreateTimeSeries(ctx context.Context, req *stackdriverpb.CreateTimeSeriesRequest) (*emptypb.Empty, error) {
 	sd.published <- req
-	return nil, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (sd *stackDriverFake) ListMonitoredResourceDescriptors(ctx context.Context, req *stackdriverpb.ListMonitoredResourceDescriptorsRequest) (*stackdriverpb.ListMonitoredResourceDescriptorsResponse, error) {
-	sd.t.Fatal("ListMonitoredResourceDescriptors")
-	return nil, errors.New("Unimplemented")
-}
-
-func (sd *stackDriverFake) GetMonitoredResourceDescriptor(context.Context, *stackdriverpb.GetMonitoredResourceDescriptorRequest) (*monitoredrespb.MonitoredResourceDescriptor, error) {
-	sd.t.Fatal("GetMonitoredResourceDescriptor")
-	return nil, errors.New("Unimplemented")
-}
-func (sd *stackDriverFake) ListMetricDescriptors(context.Context, *stackdriverpb.ListMetricDescriptorsRequest) (*stackdriverpb.ListMetricDescriptorsResponse, error) {
-	sd.t.Fatal("ListMetricDescriptors")
-	return nil, errors.New("Unimplemented")
-}
-func (sd *stackDriverFake) GetMetricDescriptor(context.Context, *stackdriverpb.GetMetricDescriptorRequest) (*metricpb.MetricDescriptor, error) {
-	sd.t.Fatal("GetMetricDescriptor")
-	return nil, errors.New("Unimplemented")
-}
 func (sd *stackDriverFake) CreateMetricDescriptor(ctx context.Context, req *stackdriverpb.CreateMetricDescriptorRequest) (*metricpb.MetricDescriptor, error) {
 	return req.MetricDescriptor, nil
-}
-func (sd *stackDriverFake) DeleteMetricDescriptor(context.Context, *stackdriverpb.DeleteMetricDescriptorRequest) (*emptypb.Empty, error) {
-	sd.t.Fatal("DeleteMetricDescriptor")
-	return nil, errors.New("Unimplemented")
-}
-func (sd *stackDriverFake) ListTimeSeries(context.Context, *stackdriverpb.ListTimeSeriesRequest) (*stackdriverpb.ListTimeSeriesResponse, error) {
-	sd.t.Fatal("ListTimeSeries")
-	return nil, errors.New("Unimplemented")
 }
