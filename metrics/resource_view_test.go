@@ -38,6 +38,7 @@ import (
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	emptypb "github.com/golang/protobuf/ptypes/empty"
 	"github.com/google/go-cmp/cmp"
@@ -99,11 +100,10 @@ func TestOptionForResource(t *testing.T) {
 }
 
 type testExporter struct {
+	view.Exporter
 	id string
 }
 
-func (fe *testExporter) ExportView(vd *view.Data) {}
-func (fe *testExporter) Flush()                   {}
 func TestSetFactory(t *testing.T) {
 	fakeFactory := func(rr *resource.Resource) (view.Exporter, error) {
 		if rr == nil {
@@ -190,7 +190,7 @@ func TestAllMetersExpiration(t *testing.T) {
 
 	// Expire the second entry
 	fakeClock.Step(9 * time.Minute) // t+12m
-	time.Sleep(1 * time.Second)     // Wait a second on the wallclock, so that the cleanup thread has time to finish a loop
+	time.Sleep(time.Second)         // Wait a second on the wallclock, so that the cleanup thread has time to finish a loop
 	allMeters.lock.Lock()
 	if len(allMeters.meters) != 2 {
 		t.Errorf("len(allMeters)=%d, want: 2", len(allMeters.meters))
@@ -216,16 +216,13 @@ func TestResourceAsString(t *testing.T) {
 
 	// Test 5 time since the iteration could be random.
 	for i := 0; i < 5; i++ {
-		s1 := resourceToKey(r1)
-		s2 := resourceToKey(r2)
-		if s1 != s2 {
-			t.Errorf("Expect same resources, but got %s and %s", s1, s2)
+
+		if s1, s2 := resourceToKey(r1), resourceToKey(r2); s1 != s2 {
+			t.Errorf("Expect same resources, but got %q and %q", s1, s2)
 		}
 	}
 
-	s1 := resourceToKey(r1)
-	s3 := resourceToKey(r3)
-	if s1 == s3 {
+	if s1, s3 := resourceToKey(r1), resourceToKey(r3); s1 == s3 {
 		t.Error("Expect different resources, but got the same", s1)
 	}
 }
@@ -362,7 +359,14 @@ func TestMetricsExport(t *testing.T) {
 	}{{
 		name: "Prometheus",
 		init: func() error {
-			return UpdateExporter(context.Background(), configForBackend(prometheus), logtesting.TestLogger(t))
+			if err := UpdateExporter(context.Background(), configForBackend(prometheus), logtesting.TestLogger(t)); err != nil {
+				return err
+			}
+			// Wait for the webserver to actually start serving metrics
+			return wait.PollImmediate(10*time.Millisecond, 10*time.Second, func() (bool, error) {
+				resp, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", prometheusPort))
+				return err == nil && resp.StatusCode == http.StatusOK, nil
+			})
 		},
 		validate: func(t *testing.T) {
 			metricstest.EnsureRecorded()
