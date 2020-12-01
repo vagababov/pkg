@@ -14,20 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package logging
+package spoof
 
-import (
-	"os"
-	"testing"
+import "net/http"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-)
+// RequestOption enables configuration of requests
+// when polling for endpoint states.
+type RequestOption func(*http.Request)
 
-func TestSpewEncoder(t *testing.T) {
-	enc := NewSpewEncoder(zap.NewDevelopmentEncoderConfig())
-	stdOut := zapcore.Lock(os.Stdout)
-	core := zapcore.NewCore(enc, stdOut, zapcore.InfoLevel)
-	logger := zap.New(core, zap.AddCaller(), zap.Development())
-	logger.Sugar().Infow("Message", "someStruct", someStruct, zap.Stack("thestack"), "zlast", "a string", "afirst", 25.8)
+// WithHeader will add the provided headers to the request.
+func WithHeader(header http.Header) RequestOption {
+	return func(r *http.Request) {
+		if r.Header == nil {
+			r.Header = header
+			return
+		}
+		for key, values := range header {
+			for _, value := range values {
+				r.Header.Add(key, value)
+			}
+		}
+	}
 }
