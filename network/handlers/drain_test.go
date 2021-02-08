@@ -19,6 +19,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -236,6 +237,58 @@ func TestDrainMechanics(t *testing.T) {
 	}
 }
 
+func TestDrainerKProbe(t *testing.T) {
+	var (
+		w          http.ResponseWriter
+		req        = &http.Request{}
+		kprobehash = "hash"
+		kprobe     = &http.Request{
+			Header: http.Header{
+				network.ProbeHeaderName: []string{network.ProbeHeaderValue},
+				network.HashHeaderName:  []string{kprobehash},
+			},
+		}
+		kprobeerr = &http.Request{
+			Header: http.Header{
+				network.ProbeHeaderName: []string{network.ProbeHeaderValue},
+			},
+		}
+		cnt   = 0
+		inner = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { cnt++ })
+	)
+	drainer := &Drainer{
+		Inner: inner,
+	}
+
+	// Works before Drain is called.
+	drainer.ServeHTTP(w, req)
+	drainer.ServeHTTP(w, req)
+	drainer.ServeHTTP(w, req)
+	if cnt != 3 {
+		t.Error("Inner handler was not properly invoked")
+	}
+
+	resp := httptest.NewRecorder()
+	drainer.ServeHTTP(resp, kprobe)
+	if got, want := resp.Code, http.StatusOK; got != want {
+		t.Errorf("Probe status = %d, wanted %d", got, want)
+	}
+
+	if got, want := resp.Header().Get(network.HashHeaderName), kprobehash; got != want {
+		t.Errorf("KProbe hash = %s, wanted %s", got, want)
+	}
+
+	resp = httptest.NewRecorder()
+	drainer.ServeHTTP(resp, kprobeerr)
+	if got, want := resp.Code, http.StatusBadRequest; got != want {
+		t.Errorf("Probe status = %d, wanted %d", got, want)
+	}
+
+	if cnt != 3 {
+		t.Error("Inner handler was not properly invoked")
+	}
+}
+
 func TestDefaultQuietPeriod(t *testing.T) {
 	nt := newTimer
 	t.Cleanup(func() {
@@ -264,4 +317,48 @@ func TestDefaultQuietPeriod(t *testing.T) {
 		t.Fatal("Failed to call drain in 1s")
 	}
 	mt.advance(network.DefaultDrainTimeout)
+}
+
+func TestHealthCheck(t *testing.T) {
+	var (
+		w     http.ResponseWriter
+		req   = &http.Request{}
+		probe = &http.Request{
+			URL: &url.URL{
+				Path: "/healthz",
+			},
+			Header: http.Header{
+				"User-Agent": []string{network.KubeProbeUAPrefix},
+			},
+		}
+		cnt     = 0
+		inner   = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { cnt++ })
+		checker = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL != nil && req.URL.Path == "/healthz" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+		})
+	)
+
+	drainer := &Drainer{
+		HealthCheck: checker,
+		Inner:       inner,
+	}
+
+	// Works before Drain is called.
+	drainer.ServeHTTP(w, req)
+	drainer.ServeHTTP(w, req)
+	drainer.ServeHTTP(w, req)
+	if cnt != 3 {
+		t.Error("Inner handler was not properly invoked")
+	}
+
+	// Works for HealthCheck.
+	resp := httptest.NewRecorder()
+	drainer.ServeHTTP(resp, probe)
+	if got, want := resp.Code, http.StatusBadRequest; got != want {
+		t.Errorf("Probe status = %d, wanted %d", got, want)
+	}
 }
